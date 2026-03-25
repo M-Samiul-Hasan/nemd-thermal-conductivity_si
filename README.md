@@ -15,16 +15,38 @@ The simulation uses:
 
 The purpose of this repository is to document a clean learning workflow for MD-based thermal transport simulation.
 
-## Method Summary
+# Method
 
-1. Build crystalline Si using a diamond lattice
-2. Minimize the initial structure
-3. Initialize atomic velocities at 300 K
-4. Equilibrate the system using NPT
-5. Switch to NVE for the transport stage
-6. Define hot and cold slabs along the z-direction
-7. Apply Langevin thermostats to the slabs
-8. Measure the temperature profile with `fix ave/chunk`
-9. Save thermostat energy tallies to `thermo.csv`
-10. Fit the temperature gradient and heat input rate in Python
-11. Calculate thermal conductivity using Fourier's law
+## Simulation type
+Direct nonequilibrium molecular dynamics (direct NEMD)
+
+## Material
+Crystalline silicon (diamond cubic)
+
+## Potential
+Stillinger–Weber (SW)
+
+## Workflow
+- Build the simulation cell
+- Minimize the structure
+- Initialize velocities at 300 K
+- Equilibrate using NPT
+- Switch to NVE
+- Define hot and cold slabs
+- Apply Langevin thermostats to hot/cold slabs
+- Measure slab temperature profile along z
+- Save cumulative thermostat energies
+- Post-process in Python to calculate thermal conductivity
+
+## Thermal conductivity calculation
+
+The thermal conductivity is computed from Fourier's law:
+
+k = J / |dT/dz|
+
+where:
+- J is the heat flux
+- dT/dz is the fitted temperature gradient
+
+The heat flux is obtained from the slope of cumulative thermostat energy vs time.
+Because periodic boundaries create two heat-flow directions, the heat-flux expression includes a factor of 2.
