@@ -1,0 +1,140 @@
+# ============================================================
+# Crystalline Si thermal conductivity by direct NEMD
+# LAMMPS input script
+# ============================================================
+
+clear
+units           metal
+dimension       3
+boundary        p p p
+atom_style      atomic
+
+# ----------------------------
+# Simulation parameters
+# ----------------------------
+variable        T0      equal 300.0
+variable        dT      equal 20.0
+variable        Thot    equal ${T0}+${dT}
+variable        Tcold   equal ${T0}-${dT}
+
+variable        a       equal 5.431
+variable        nx      equal 10
+variable        ny      equal 10
+variable        nz      equal 48
+variable        dz      equal 4.0
+
+variable        seed1   equal 123456
+variable        seed2   equal 234567
+variable        seed3   equal 345678
+
+# ----------------------------
+# Build crystalline Si
+# ----------------------------
+lattice         diamond ${a}
+region          whole block 0 ${nx} 0 ${ny} 0 ${nz} units lattice
+create_box      1 whole
+create_atoms    1 box
+
+mass            1 28.0855
+
+# ----------------------------
+# Interatomic potential
+# ----------------------------
+pair_style      sw
+pair_coeff      * * Si.sw Si
+
+neighbor        2.0 bin
+neigh_modify    every 1 delay 0 check yes
+
+# ----------------------------
+# Basic settings
+# ----------------------------
+timestep        0.001
+thermo          1000
+thermo_style    custom step temp press pe ke etotal lx ly lz
+
+reset_timestep  0
+
+# ----------------------------
+# Energy minimization
+# ----------------------------
+min_style       cg
+minimize        1.0e-12 1.0e-12 3000 30000
+
+# ----------------------------
+# Initial velocities
+# ----------------------------
+velocity        all create ${T0} ${seed1} mom yes rot no dist gaussian
+
+# ----------------------------
+# Equilibration (NPT)
+# ----------------------------
+fix             EQ1 all npt temp ${T0} ${T0} 0.1 iso 0.0 0.0 1.0
+run             100000
+unfix           EQ1
+
+# ----------------------------
+# Nonequilibrium stage setup
+# ----------------------------
+fix             MOM all momentum 100 linear 1 1 1
+fix             INT all nve
+
+variable        zlo equal zlo
+variable        lz  equal lz
+variable        slabw equal 0.05*v_lz
+
+# Cold slab centered near 1/4 of the box
+variable        coldc equal v_zlo + 0.25*v_lz
+variable        cold1 equal v_coldc - 0.5*v_slabw
+variable        cold2 equal v_coldc + 0.5*v_slabw
+
+# Hot slab centered near 3/4 of the box
+variable        hotc  equal v_zlo + 0.75*v_lz
+variable        hot1  equal v_hotc - 0.5*v_slabw
+variable        hot2  equal v_hotc + 0.5*v_slabw
+
+region          cold block INF INF INF INF ${cold1} ${cold2} units box
+region          hot  block INF INF INF INF ${hot1}  ${hot2}  units box
+
+group           coldreg region cold
+group           hotreg  region hot
+
+# ----------------------------
+# Apply thermostats only to slabs
+# tally yes tracks cumulative thermostat energy
+# ----------------------------
+fix             HOT  hotreg  langevin ${Thot}  ${Thot}  0.1 ${seed2} tally yes zero yes
+fix             COLD coldreg langevin ${Tcold} ${Tcold} 0.1 ${seed3} tally yes zero yes
+
+# ----------------------------
+# Temperature profile along z
+# ----------------------------
+compute         zchunk all chunk/atom bin/1d z lower ${dz} units box
+fix             TPROF all ave/chunk 200 150 30000 zchunk temp file temp.profile.direct
+
+# ----------------------------
+# Save global thermo data to CSV
+# step,temp,lx,ly,lz,f_HOT,f_COLD
+# ----------------------------
+fix             OUT all print 1000 "${step},${temp},${lx},${ly},${lz},${f_HOT},${f_COLD}" file thermo.csv screen no
+
+# ----------------------------
+# Optional trajectory output
+# ----------------------------
+dump            DUMP all custom 100000 dump.direct id type x y z vx vy vz
+dump_modify     DUMP sort id
+
+# ----------------------------
+# Thermo output to screen/log
+# ----------------------------
+thermo_style    custom step temp press pe ke etotal lx ly lz f_HOT f_COLD
+
+# ----------------------------
+# Transient run
+# ----------------------------
+run             100000
+
+# ----------------------------
+# Averaging run
+# ----------------------------
+run             250000
